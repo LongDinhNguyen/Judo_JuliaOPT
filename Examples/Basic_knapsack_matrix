@@ -1,0 +1,39 @@
+
+tic()
+using Convex
+#using SCS
+
+
+# Maximization problem
+size_vec = 100^2
+profit = rand(2:4,size_vec) # reinterpret(Int64, rand(size_vec))
+weight = rand(1:4,size_vec) # reinterpret(Int64, rand(size_vec))
+capacity = size_vec
+
+x = Variable(size_vec, :Bin) # x = Variable(size_vec, :Int)
+
+# Objective: maximize profit
+obj = (profit'*x)
+
+# Constraint: can carry all
+const1 = (weight'*x) <= capacity;
+
+problem = maximize(obj, const1)
+
+# Solve problem using MIP solver
+using GLPKMathProgInterface
+@time solve!(problem, GLPKSolverMIP())
+toc()
+
+println("Status: ", problem.status)
+println("Optimal value = ", problem.optval)
+# println("Value of x = ", x)
+#for i = 1:size_vec
+#    print("x[$i] = ", getvalue(x[i]))
+#    println(", p[$i]/w[$i] = ", profit[i]/weight[i])
+#end
+
+# println("Random profit: ", profit)
+# println("Random weights: ", weight)
+# println("x = ", getvalue(x))
+# println("profit/weights = ", profit./weight)

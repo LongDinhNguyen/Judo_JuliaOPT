@@ -1,0 +1,99 @@
+# This code is written by
+# Long Dinh Nguyen, PhD student at Queen's University Belfast
+# Email: dinhlonghcmut@gmail.com (lnguyen04@qub.ac.uk)
+#
+#
+#
+# This convex problem is to implement a basic fractional program (FP) using Dinkelbach's method
+#
+# For instance, the general FP problem as Energy Efficiency problem
+# max    sum(rate(x(p)))/Power(x(p))
+# s.t. log(1 + |h'*x(p)|^2/delta) >= r_{QoS}
+#      ||x(p)||_2^2 <= P_{max}
+
+# rate(x(p_i)) = log(1 + a_i*p_i/delta)
+# Power(x(p)) = ||x(p)||_2^2 + P_{cir}
+###########################################
+
+using Convex
+tic()
+# set data
+k = 100; # number of elements
+n = 256; # number of antennas at BS
+P0 = 5000; # max power budget
+P_cir = 1000;
+r0 = 0.2; # data rate QoS
+delta = 1; # normalized Gaussian noise
+
+# set channel model from a BS (multi-antenna) to multiple UEs (single-antenna)
+H = 0.5*(randn(n,k) + im*randn(n,k))
+
+# Assume pathloss (large-scale) channel is fixed with the value of 1e-2
+path = 1e-2;
+
+# Applying ZF beamforming to iliminate the inter-user interferences
+F_zf = H*inv(H'*H);
+
+# Nomalized vector beamforming
+f_nor = zeros(n,k)+im*zeros(n,k);
+beta = zeros(k);
+for i=1:k
+    f_nor[:,i] = F_zf[:,i]/norm(F_zf[:,i],2);
+end
+
+beta = [path*abs2( H[:,i]'*f_nor[:,i] ) for i = 1:k]
+
+
+# ##############################################
+# ########## Dinkelbach's method ############
+
+# set tau_ini
+tau_ini = 0.01;
+er_alg = 1;
+iter_alg = 0;
+ref_sol = [];
+problem_val_opt = 0;
+
+while (er_alg >= 1e-4)
+
+    iter_alg = iter_alg + 1;
+    println("Iteration: ", iter_alg)
+
+    if (iter_alg == 1)
+        tau_ref = tau_ini;
+    end
+
+x = Variable(k , Positive())
+obj1 = sum(log(1 + beta[i]*x[i]/delta) for i=1:k)
+obj2 = sum(x[i] for i=1:k) + P_cir
+
+problem = maximize((obj1 - tau_ref*obj2))
+
+problem.constraints += sum(x[i] for i=1:k) <= P0
+for i = 1:k
+    problem.constraints += x[i]*beta[i]/delta >= (exp(1)^r0-1)
+end
+
+using ECOS
+@time solve!(problem, ECOSSolver(verbose=false))
+
+obj1_opt = sum(log(1 + beta[i]*x.value[i]/delta) for i=1:k);
+obj2_opt = sum(x.value[i] for i=1:k) + P_cir;
+tau_ref = obj1_opt/obj2_opt;
+ref_sol = [ref_sol; tau_ref];
+# println("ref_sol is: ", ref_sol)
+if (iter_alg >= 2)
+        er_alg = abs(ref_sol[iter_alg] - ref_sol[iter_alg-1])/abs(ref_sol[iter_alg-1]);
+end
+println("Error_Alg is: ", er_alg)
+
+problem_val_opt = tau_ref
+println("Optimal value is: ", tau_ref)
+
+if (iter_alg >= 20)
+    er_alg = 0;
+end
+end
+toc()
+
+problem_val_opt

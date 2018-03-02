@@ -1,0 +1,37 @@
+using Convex, GLPKMathProgInterface
+using ECOS
+using JLD, HDF5
+
+# ###############################################
+# Function opt
+# ###############################################
+function ini_rzf_1cell(Km, NumUser, h_rzf, var_noise, eta_ini, rmin, Pow_cir, lamba)
+  pow = Variable(NumUser)
+  obj = 0;
+  for i = 1:NumUser
+    obj =  obj + abs( h_rzf[:,i]'*inv(h_rzf*h_rzf' + eta_ini*eye(Km))*h_rzf[:,i] )^2*pow[i];
+  end
+
+  prob = minimize(obj)
+
+  for i = 1:NumUser
+    term_1 = 0;
+    for j = 1:NumUser
+      if (j != i)
+        term_1 = term_1 + abs( h_rzf[:,i]'*inv(h_rzf*h_rzf' + eta_ini*eye(Km))*h_rzf[:,j] )^2*pow[j];
+      end
+    end
+    term_1 = term_1 + var_noise[i];
+
+    prob.constraints += abs( h_rzf[:,i]'*inv(h_rzf*h_rzf' + eta_ini*eye(Km))*h_rzf[:,i] )^2*pow[i] >= exp(rmin)*term_1
+  end
+
+  #using GLPKMathProgInterface
+  @time solve!(prob, ECOSSolver())
+
+  println("Status: ", prob.status)
+  println("Objective value: ", prob.optval)
+  #println("x = %x", x)
+  pow_sol = pow;
+    save("/Users/LONG NGUYEN/Documents/CVXPY/JULIA_OPT/Juno_JULIA/Proj2_RZF_OPT/ini_rzf.jld","pow_sol",pow_sol)
+end

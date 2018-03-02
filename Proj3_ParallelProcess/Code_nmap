@@ -1,0 +1,24 @@
+# Example for multiple processes
+# Calculate pi from: unif(0,1) * unif(0,1)
+# and Calculate x^2 + y^2 < 1
+
+using MathProgBase
+
+#julia -p 3
+n_pros = 2; # No of processor (n + 1)
+addprocs(n_pros)
+@everywhere function cir_num(numIter)
+  rand_co = rand(numIter, 2).^2;
+  return(sum(rand_co[:,1] + rand_co[:,2] .< 1))
+end
+
+tic()
+
+numIter = 90000000;
+numIter2 = convert(Int64, numIter/(n_pros+1))
+M = (numIter2 for i=1:(n_pros+1));
+sum_ans = pmap(cir_num, M);
+ans = (4/(n_pros+1))*sum(sum_ans)/numIter2;
+
+toc()
+print(ans)

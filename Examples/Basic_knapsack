@@ -1,0 +1,54 @@
+#  Copyright 2017, Iain Dunning, Joey Huchette, Miles Lubin, and contributors
+#  This Source Code Form is subject to the terms of the Mozilla Public
+#  License, v. 2.0. If a copy of the MPL was not distributed with this
+#  file, You can obtain one at http://mozilla.org/MPL/2.0/.
+#############################################################################
+# JuMP
+# An algebraic modeling langauge for Julia
+# See http://github.com/JuliaOpt/JuMP.jl
+#############################################################################
+# knapsack.jl
+#
+# Solves a simple knapsack problem:
+# max sum(p_j x_j)
+#  st sum(w_j x_j) <= C
+#     x binary
+#############################################################################
+
+# tic()
+using Convex
+
+# Maximization problem
+size_vec = 1000
+profit = rand(1:10,size_vec) # reinterpret(Int64, rand(size_vec))
+weight = rand(1:10,size_vec) # reinterpret(Int64, rand(size_vec))
+capacity = 50
+
+x = Variable(size_vec, :Bin) # x = Variable(size_vec, :Int)
+
+# Objective: maximize profit
+obj = dot(profit, x)
+
+# Constraint: can carry all
+const1 = dot(weight, x)
+
+problem = maximize(obj, const1 <= capacity)
+
+
+# Solve problem using MIP solver
+using GLPKMathProgInterface
+@time solve!(problem, GLPKSolverMIP())
+# toc()
+
+println("Status: ", problem.status)
+println("Optimal value = ", problem.optval)
+# println("Value of x = ", x)
+#for i = 1:size_vec
+#    print("x[$i] = ", getvalue(x[i]))
+#    println(", p[$i]/w[$i] = ", profit[i]/weight[i])
+#end
+
+# println("Random profit: ", profit)
+# println("Random weights: ", weight)
+# println("x = ", getvalue(x))
+# println("profit/weights = ", profit./weight)

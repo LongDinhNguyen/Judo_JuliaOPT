@@ -1,0 +1,29 @@
+# Given a knapsack of some capacity C and n objects with object i having weight w_i and profit p_i,
+# the goal is to choose some subset of the objects that can fit in the knapsack
+# (i.e. the sum of their weights is no more than C) while maximizing profit.
+# This can be formulated as a mixed-integer program as:
+# maximize x'p
+#            x in {0, 1}
+#            w'x <= C
+# x is a vector is size n where x_i is one if we chose to keep the object in the knapsack, 0 otherwise.
+
+N = 4;
+# w = [23; 31; 29; 44; 53; 38; 63; 85; 89; 82]
+w = 2*sqrt(N)*rand(1,N)
+C = 4*N
+# p =  [92; 57; 49; 68; 60; 43; 67; 84; 87; 72];
+p = 10*rand(1,N)
+n = length(w)
+
+tic()
+using Convex, GLPKMathProgInterface
+x = Variable(n, :Bin)
+obj = dot(p, x)
+conts = [dot(w, x) <= C]
+problem = maximize(obj, conts)
+solve!(problem, GLPKSolverMIP())
+toc()
+
+println(problem.status)
+println(problem.optval)
+println(x.value)

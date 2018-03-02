@@ -1,0 +1,37 @@
+# Long Dinh Nguyen, PhD student at Queen's University Belfast
+# Email: dinhlonghcmut@gmail.com (lnguyen04@qub.ac.uk)
+#
+#
+#
+# This convex problem is to minimize the transmit power with multiple constraints (power budget, data rate QoS, ...)
+# Assuming all interference is eliminated by techniques (Conj, ZF, MMSE ...)
+# The general problem as
+# min ||x||_2^2
+# s.t. log(1 + |h'*x|^2/delta) >= r_{min}
+#      ||x||_2^2 <= P_{max}
+###########################################
+
+using Convex
+
+# Set data
+n = 5000; # size of MISO (multi-antenna at BS and single-antenna at UE)
+delta = 1; # normalized the Gaussian noise at receivers
+P0 = 100; # the maximum power budget
+r0 = 2; # the data rate QoS
+
+h = 0.5*(randn(n,1) + im*randn(n,1)) # channel gain from BS to UE
+
+# println(h)
+
+# set variable
+x = ComplexVariable(n)
+
+obj = square(norm(x,2))
+problem = minimize(obj, [square(norm(x,2)) <= P0, real(h'*x) >= sqrt(exp(r0)*delta)])
+
+using SCS
+@time solve!(problem, SCSSolver())
+
+println("Status: ", problem.status)
+println("Objective value: ", problem.optval)
+# println("x = ", x)

@@ -1,0 +1,15 @@
+# Example for single process
+# Calculate pi from: unif(0,1) * unif(0,1)
+# and Calculate x^2 + y^2 < 1
+
+using MathProgBase
+
+tic()
+
+numIter = 100000000;
+rand_co = rand(numIter, 2).^2;
+num_cir = sum(rand_co[:,1] + rand_co[:,2] .< 1);
+ans1 = 4*num_cir/numIter;
+
+toc()
+print(ans1)

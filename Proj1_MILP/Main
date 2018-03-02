@@ -1,0 +1,21 @@
+using Convex, GLPKMathProgInterface
+using JLD, HDF5
+
+
+
+# ######################################################
+# Main code
+# ####################################################
+include("Input.jl");
+N = size(data1');
+
+a = data1';
+b = data2';
+c = data3;
+println(N)
+
+f_milp(a,b,c,N)
+
+x_opt = load("solution.jld","x_sol")
+
+println("x_opt:", x_opt)

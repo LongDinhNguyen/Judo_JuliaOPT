@@ -1,0 +1,38 @@
+#  Copyright 2017, Iain Dunning, Joey Huchette, Miles Lubin, and contributors
+#  This Source Code Form is subject to the terms of the Mozilla Public
+#  License, v. 2.0. If a copy of the MPL was not distributed with this
+#  file, You can obtain one at http://mozilla.org/MPL/2.0/.
+#############################################################################
+# Convex.jl
+#############################################################################
+# basic.jl
+#
+# Solves a simple LP:
+# max 5x + 3y
+#  st 1x + 5y <= 3
+#      0 <= x <= 2
+#      0 <= y <= 20
+#############################################################################
+
+function f(a,b)
+    #using Convex
+
+    x = Variable()
+    y = Variable()
+
+    obj = a*x+b*y
+
+    problem = maximize(obj, 1*x + 5*y <= 3, 0 <= x, x <= 2, 0 <= y, y <= 30)
+
+    @time solve!(problem)
+
+    println("Status: ", problem.status)
+    println("Objective value: ", problem.optval)
+    #println("x = ", x)
+    #println("y = ", y)
+end
+
+#a = 5;
+#b = 3;
+using Convex
+f(5,3)

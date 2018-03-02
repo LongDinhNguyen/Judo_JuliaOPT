@@ -1,0 +1,224 @@
+# This code is written by
+# Long Dinh Nguyen, PhD student at Queen's University Belfast
+# Email: dinhlonghcmut@gmail.com (lnguyen04@qub.ac.uk)
+#
+#
+#
+# This convex problem is to implement a basic successive sequence program (SSP) for
+# splitting with fractional nonlinear program (SFNLP)
+#
+# For instance, the general SFNLP problem as Energy Efficiency problem
+# max   ( alpha*sum_1(rate(x(p))) + beta*sum_2(rate(x(p))) )/Total_Power(x(p))
+# s.t. alpha*log(1 + |h'*x(p)|^2/delta) >= r_{min}
+#      beta*log(1 + |h'*x(p)|^2/delta) >= r_{min}
+#      sum(p) <= P_{max}
+
+# rate(p_i) = log(1 + a_i*p_i/delta)
+# Power(p) = sum(p) + P_{cir}
+###########################################
+
+using Convex
+using MathProgBase
+using Gadfly
+
+tic()
+# set data
+k = 50; # number of users
+# cannot use "10/2", must be used "5" for scalar value
+n = 64; # number of antennas at BS
+P0 = 1000; # max power budget
+P_cir = 1000;
+r0 = 2; # data rate QoS
+delta = 1e-4; # normalized Gaussian noise
+
+# set channel model from a BS (multi-antenna) to multiple UEs (single-antenna)
+# Divide k users into 2 clusters with k1 and k2, k1 = k2 = k/2
+H1 = 0.5*(randn(n,k) + im*randn(n,k))
+H2 = 0.5*(randn(n,k) + im*randn(n,k))
+
+# Assume pathloss (large-scale) channel is fixed
+path1 = 1e-3; path2 = 1e-4;
+
+# Applying ZF beamforming for two clusters
+F_conj1 = H1*inv(H1'*H1);
+F_conj2 = H2*inv(H2'*H2);
+
+# Nomalized vector beamforming
+f_nor1 = randn(n,k) + im*randn(n,k);
+for i=1:k
+    f_nor1[:,i] = F_conj1[:,i]/norm(F_conj1[:,i],2);
+end
+f_nor2 = randn(n,k) + im*randn(n,k);
+for i=1:k
+    f_nor2[:,i] = F_conj2[:,i]/norm(F_conj2[:,i],2);
+end
+
+beta1 = Array{Any,2}(zeros(k,1))
+for i = 1:k
+    beta1[i] = path1*abs2(H1[:,i]'*f_nor1[:,i])/norm(f_nor1[:,i])^2
+end
+beta2 = Array{Any,2}(zeros(k,1))
+for i = 1:k
+    beta2[i] = path2*abs2(H2[:,i]'*f_nor2[:,i])/norm(f_nor2[:,i])^2
+end
+println("Done set up data")
+
+
+# ##############################################
+# ########## Initial point ############
+an2_ini = 2; an1_ini = 1/(1-1/an2_ini);
+
+p_ini1 = Variable(k , Positive())
+p_ini2 = Variable(k , Positive())
+
+obj_ini = (1/an1_ini)*sum(invpos(p_ini1[i]) for i=1:k) + (1/an2_ini)*sum(invpos(p_ini2[i]) for i=1:k) + P_cir
+problem = minimize(obj_ini)
+
+for i = 1:k
+    problem.constraints += p_ini1[i] >= 1/(2*P0)
+    problem.constraints += p_ini2[i] >= 1/(2*P0)
+    problem.constraints += p_ini1[i]*delta <= beta1[i]/(exp(1)^(r0*an1_ini)-1)
+    problem.constraints += p_ini2[i]*delta <= beta2[i]/(exp(1)^(r0*an2_ini)-1)
+end
+problem.constraints += (1/an1_ini)*sum(invpos(p_ini1[i]) for i=1:k) + (1/an2_ini)*sum(invpos(p_ini2[i]) for i=1:k) <= P0
+
+using ECOS
+@time solve!(problem, ECOSSolver())
+
+@show problem.status
+pow1_ini = p_ini1.value
+pow2_ini = p_ini2.value
+#@show pow1_ini
+#@show pow2_ini
+t_ini = (1/an1_ini)*sum(1./pow1_ini[i] for i=1:k) + (1/an2_ini)*sum(1./pow2_ini[i] for i=1:k) + P_cir
+@show t_ini
+
+println("Done initialized point")
+
+# ##############################################
+# ########## Successive sequence algorithm ############
+
+# set iter parameters
+er_alg = 1;
+iter_alg = 0;
+ref_sol = [];
+
+while (er_alg >= 1e-3)
+
+    iter_alg = iter_alg + 1;
+    println("Iteration: ", iter_alg)
+
+    pow1_ref = Array{Any,2}(zeros(k,1));
+    if (iter_alg == 1)
+        pow1_ref = pow1_ini; pow2_ref = pow2_ini;
+        an1_ref = an1_ini; an2_ref = an2_ini;
+        t_ref = t_ini;
+    else
+        pow1_ref = pow1_iter; pow2_ref = pow2_iter;
+        an1_ref = an1_iter; an2_ref = an2_iter;
+        t_ref = t_iter;
+    end
+
+    # For cluster 1
+    x1_it = [ delta*pow1_ref[i]./beta1[i] for i=1:k ] #delta*(pow1_ref.*(1./beta1))
+
+    a1 = [ 2*log(1+1./x1_it[i])/an1_ref + 1./(an1_ref*(1+x1_it[i])) for i=1:k ]
+    b1 = [ 1./(an1_ref*x1_it[i].*(1+x1_it[i])) for i=1:k ]
+    c1 = [ log(1+1./x1_it[i])/an1_ref^2 for i=1:k ]
+
+    a11 = [ 3*log(1+1./x1_it[i])/(an1_ref*t_ref) + 1./(t_ref*an1_ref*(1+x1_it[i])) for i=1:k ]
+    b11 = [ 1./(t_ref*an1_ref*x1_it[i].*(1+x1_it[i])) for i=1:k ]
+    c11 = [ log(1+1./x1_it[i])/(an1_ref^2*t_ref) for i=1:k ]
+    d11 = [ log(1+1./x1_it[i])/(an1_ref*t_ref^2) for i=1:k ]
+
+    # For cluster 2
+    x2_it = [ delta*pow2_ref[i]./beta2[i] for i=1:k ]
+
+    a2 = [ 2*log(1+1./x2_it[i])/an2_ref + 1./(an2_ref*(1+x2_it[i])) for i=1:k ]
+    b2 = [ 1./(an2_ref*x2_it[i].*(1+x2_it[i])) for i=1:k ]
+    c2 = [ log(1+1./x2_it[i])/an2_ref^2 for i=1:k ]
+
+    a21 = [ 3*log(1+1./x2_it[i])/(an2_ref*t_ref) + 1./(t_ref*an2_ref*(1+x2_it[i])) for i=1:k ]
+    b21 = [ 1./(t_ref*an2_ref*x2_it[i].*(1+x2_it[i])) for i=1:k ]
+    c21 = [ log(1+1./x2_it[i])/(an2_ref^2*t_ref) for i=1:k ]
+    d21 = [ log(1+1./x2_it[i])/(an2_ref*t_ref^2) for i=1:k ]
+
+# println("!Done step!")
+
+pow1 = Variable(k, Positive())
+pow2 = Variable(k, Positive())
+an1 = Variable(1, Positive())
+an2 = Variable(1, Positive())
+t = Variable(1, Positive())
+
+obj11 = 0; obj12 = 0; obj13 = 0; obj14 = 0;
+obj21 = 0; obj22 = 0; obj23 = 0; obj24 = 0;
+
+obj11 = sum(a11)
+obj12 = sum(b11[i]*delta*pow1[i]./beta1[i] for i=1:k)
+obj13 = sum(c11[i]*an1 for i=1:k)
+obj14 = sum(d11[i]*t for i=1:k);
+
+obj21 = sum(a21)
+obj22 = sum(b21[i]*delta*pow2[i]./beta2[i] for i=1:k)
+obj23 = sum(c21[i]*an2 for i=1:k)
+obj24 = sum(d21[i]*t for i=1:k)
+
+obj = (obj11 - obj12 - obj13 - obj14 + obj21 - obj22 - obj23 - obj24)
+
+problem = maximize( obj )
+
+epsi1 = 0; epsi2 = 0;
+for i = 1:k
+    problem.constraints += a1[i] - b1[i]*pow1[i]*delta./beta1[i] - c1[i]*an1 >= r0
+    problem.constraints += pow1[i] >= 1/(2*P0)
+
+    problem.constraints += a2[i] - b2[i]*pow2[i]*delta./beta2[i] - c2[i]*an2 >= r0
+    problem.constraints += pow2[i] >= 1/(2*P0)
+end
+    problem.constraints += an1 >= 1.01
+    problem.constraints += an2 >= 1.01
+    problem.constraints += invpos(an1) + invpos(an2) <= 1
+    # problem.constraints += square(invpos(geomean(an2, (1-tau)))) <= 1
+
+    epsi1 = sum( invpos(pow1[i]) for i=1:k )
+    epsi11 = sum( -3./(an2_ref*pow1_ref[i]) + pow1[i]./(pow1_ref[i]^2*an2_ref) + an2./(pow1_ref[i]*an2_ref^2) for i=1:k )
+    epsi2 = sum( square(invpos(geomean(an2, pow2[i]))) for i=1:k )
+    problem.constraints += (epsi1 + epsi11 + epsi2) <= P0
+    problem.constraints += t >= (epsi1 + epsi11 + epsi2 + P_cir)
+
+using ECOS
+@time solve!(problem, ECOSSolver())
+
+pow1_iter = pow1.value
+pow2_iter = pow2.value
+#@show pow1_iter
+#@show pow2_iter
+
+an1_iter = an1.value
+an2_iter = an2.value
+#@show an1_iter
+
+t_iter = t.value
+#@show t_iter
+
+ref_sol = [ref_sol; problem.optval];
+# println("ref_sol is: ", ref_sol)
+if (iter_alg >= 2)
+        er_alg = abs(ref_sol[iter_alg] - ref_sol[iter_alg-1])/abs(ref_sol[iter_alg-1]);
+end
+# println("Error_Alg is: ", er_alg)
+
+println("OBJ func is: ", 1e3*problem.optval)
+
+if (iter_alg >= 20)
+    er_alg = 0;
+end
+
+end
+
+toc()
+
+p = plot(
+  x=1:iter_alg, y=ref_sol, Geom.line
+)

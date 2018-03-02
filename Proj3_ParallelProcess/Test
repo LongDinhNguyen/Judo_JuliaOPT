@@ -1,0 +1,8 @@
+# julia -p 3
+
+addprocs(2);
+workers()
+
+@everywhere p = 2
+
+@everywhere println(@sprintf("ID %d: %f %d, myid(), rand(), p"))

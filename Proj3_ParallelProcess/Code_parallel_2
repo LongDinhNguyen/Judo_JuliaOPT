@@ -1,0 +1,20 @@
+using MathProgBase
+
+#julia -p 3
+n_pros = 1; # No of processor (n + 1)
+addprocs(n_pros)
+
+tic()
+
+numIter = 100;
+num_ref = 1000;
+sum_C = 0;
+
+sum_C = @parallel (+) for i = 1:numIter
+  A = randn(num_ref, num_ref);
+  B = randn(num_ref, num_ref);
+  sum_C = norm(A.*B);
+end
+
+toc()
+print(sum_C)

@@ -1,0 +1,33 @@
+# Boyd & Vandenberghe, "Convex Optimization"
+#
+# Solved a Lasso problem:
+#           minimize    ||Ax - b||_2^2 + gamma*||x||_1
+#               s.t.    some constraints if have
+
+# tic()
+using Convex
+
+n = 50;
+
+A = randn(n, n)
+A = A' * A + eye(n)
+
+# println(P0)
+
+b = randn(n,1);
+
+gamma = 1;
+
+x = Variable(n)
+
+obj = sumsquares(A*x - b) + gamma*norm(x, 1)
+
+problem = minimize(obj, x >= 0 )
+
+using SCS
+@time solve!(problem, SCSSolver())
+# toc()
+
+println("Status: ", problem.status)
+println("Optimal value = ", problem.optval)
+# println("x = ", x)

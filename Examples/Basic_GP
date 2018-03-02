@@ -1,0 +1,47 @@
+#############################################################################
+# Solving geometry programming
+#
+# Solves a simple GP problem:
+# max product(vec(x)) , i = 1,...,K
+#  st w'*x >= C
+#     x_i <= 10
+
+# Reform GP problem:
+# max log(x_1) + ... + log(x_K) , i = 1,...,K
+#  st w'*x >= C
+#     x_i <= 10
+#############################################################################
+
+using Convex
+using MathProgBase
+
+# Maximization problem
+size_vec = 20
+w = rand(size_vec)
+C = 5
+
+x = Variable(size_vec)
+
+# Objective: maximize profit
+# obj = x[1]*x[2]*...*x[K]
+obj = sum(log(x[i]) for i=1:size_vec)
+
+# Constraint: can carry all
+const1 = dot(w, x)
+
+problem = maximize(obj, const1 <= C, x <= 5)
+
+
+# Solve problem using MIP solver
+using ECOS
+@time solve!(problem, ECOSSolver())
+# toc()
+
+opt_obj_org = 1;
+for i = 1:size_vec
+    opt_obj_org = opt_obj_org*x.value[i]
+end
+
+println("Status: ", problem.status)
+println("Optimal value = ", opt_obj_org)
+println("Value of x = ", x)

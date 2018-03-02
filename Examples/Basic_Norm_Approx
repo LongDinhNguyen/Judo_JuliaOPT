@@ -1,0 +1,70 @@
+# Taken from CVX website http://cvxr.com/cvx/examples/
+# Examples 5.6,5.8: An l_p norm approximation problem
+# Ported from cvx matlab to cvxpy by Misrab Faizullah-Khan
+# Original comments below
+
+# Boyd & Vandenberghe "Convex Optimization"
+# Joelle Skaf - 08/23/05
+#
+# The goal is to show the following problem formulations give all the same
+# optimal residual norm ||Ax - b||:
+# 1)        minimize    ||Ax - b||
+# 2)        minimize    ||y||
+#               s.t.    Ax - b = y
+# 3)        maximize    b'v
+#               s.t.    ||v||* <= 1  , A'v = 0
+# 4)        minimize    1/2 ||y||^2
+#               s.t.    Ax - b = y
+# 5)        maximize    -1/2||v||*^2 + b'v
+#               s.t.    A'v = 0
+# where ||.||* denotes the dual norm of ||.||
+
+using Convex
+
+# Input data
+n = 4
+m = 2*n
+A = randn(m,n)
+b = randn(m,1)
+p = 2
+q = p/(p-1)
+
+# ########################################
+# Original problem
+x = Variable(n)
+obj_org = norm(A*x - b,p)
+prob_org = minimize(obj_org)
+
+@time solve!(prob_org)
+
+println("Computing the optimal solution of org problem...")
+println("Status:", prob_org.status)
+println("Opt value:", prob_org.optval)
+
+# ############################################
+# Reformulation 1
+x = Variable(n)
+y = Variable(m)
+obj1 = norm(y, p)
+prob1 = minimize(obj1, A*x - b == y)
+
+@time solve!(prob1)
+
+println("#####################################")
+println("Computing the optimal solution of problem 1...")
+println("Status:", prob1.status)
+println("Opt value:", prob1.optval)
+
+# ##############################################
+# Reformulation 2
+x = Variable(n)
+y = Variable(m)
+obj2 = 0.5*norm(y, p)^2
+prob2 = minimize(obj2, A*x - b == y )
+
+@time solve!(prob2)
+
+println("#####################################")
+println("Computing the optimal solution of problem 2...")
+println("Status:", prob2.status)
+println("Opt value:", prob2.optval)

@@ -1,0 +1,15 @@
+using MathProgBase
+
+tic()
+
+numIter = 100;
+num_ref = 1000;
+sum_C = 0;
+for i = 1:numIter
+  A = randn(num_ref, num_ref);
+  B = randn(num_ref, num_ref);
+  sum_C = sum_C + norm(A.*B);
+end
+
+toc()
+print(sum_C)

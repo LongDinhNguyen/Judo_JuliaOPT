@@ -1,0 +1,28 @@
+using MathProgBase
+
+#julia -p 3
+n_pros = 4; # No of processor (n + 1)
+addprocs(n_pros)
+@everywhere function cir_num(numIter)
+  num_ref = 1000;
+  sum_C = 0;
+  for i = 1:numIter
+    A = randn(num_ref, num_ref);
+    B = randn(num_ref, num_ref);
+    sum_C = sum_C + norm(A.*B);
+  end
+  return(sum_C)
+end
+
+tic()
+numIter = 100;
+num_ref = 1000;
+#sum_C = 0;
+
+numIter2 = convert(Int64, numIter/(n_pros))
+M = (numIter2 for i=1:(n_pros));
+sum_ans = pmap(cir_num, M);
+ans = sum(sum_ans);
+
+toc()
+print(ans)

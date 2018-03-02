@@ -1,0 +1,220 @@
+using Convex
+using ECOS, SCS
+using MAT, JLD, HDF5
+using MathProgBase
+
+Wband = 10; # MHz
+RadBS = 1000;
+
+Km_ref = 16;
+lamba = 1/0.388;
+NumUser_ref = 100;
+Noise_var = 10^(-174/10)*Wband*10^6*(10^0.9);
+delta_k = Noise_var;
+
+Km = Km_ref;
+Pm = 10^(4.6);
+p_an_bs = 189;
+pc_bs = 10^4;
+
+NoMonte = 1;
+
+# "/Users/LONG NGUYEN/Documents/CVXPY/JULIA_OPT/Juno_JULIA/Proj2_RZF_OPT/"
+Chan_file = matopen("/Users/LONG NGUYEN/Documents/CVXPY/JULIA_OPT/Juno_JULIA/Proj2_RZF_OPT/X_chan_data1.mat")
+User_path = read(Chan_file, "User_ploss")
+BSchan = read(Chan_file, "BSchan")
+#close(Chan_file)
+
+term_UE = 4;
+prin = 0;
+# while (prin < length(term_UE))
+  prin = prin + 1;
+  NumUser = term_UE[prin];
+
+  # BS transmission
+  h_rzf = [];
+  BS_Chan_Full = BSchan[1:NumUser, 1:Km];
+  h_rzf = BS_Chan_Full.';
+
+  var_noise = zeros(1,NumUser);
+  for i = 1:NumUser
+    var_noise[i] = Noise_var/(User_path[i])^2;
+  end
+
+  H1, H2, H3 = svd(h_rzf*h_rzf');
+  # H2 = Array{Any,1}(H2);
+
+  bar_h = zeros(Km, NumUser) + im*zeros(Km, NumUser);
+  for i = 1:NumUser
+    bar_h[1:Km,i] = H1'*h_rzf[1:Km,i];
+  end
+
+  # QoS requirement
+  rmin = 0.4*log(2);
+  Pow_cir = Km*p_an_bs + pc_bs;
+
+###################################################################
+  # Initial point
+  eta_ini = NumUser/1e3;
+pow = Variable(NumUser, Positive())
+obj = 0;
+for i = 1:NumUser
+  obj =  obj + abs( h_rzf[:,i]'*inv(h_rzf*h_rzf' + eta_ini*eye(Km))^2*h_rzf[:,i] )*pow[i];
+end
+prob_ini = minimize(obj)
+for i = 1:NumUser
+  term_1 = 0;
+  for j = 1:NumUser
+    if (j != i)
+      term_1 = term_1 + abs( h_rzf[:,i]'*inv(h_rzf*h_rzf' + eta_ini*eye(Km))*h_rzf[:,j] )^2*pow[j];
+    end
+  end
+  term_1 = term_1 + var_noise[i];
+  prob_ini.constraints += abs( h_rzf[:,i]'*inv(h_rzf*h_rzf' + eta_ini*eye(Km))*h_rzf[:,i] )^2*pow[i] >= (exp(rmin)-1)*term_1
+end
+
+#using GLPKMathProgInterface
+@time solve!(prob_ini, ECOSSolver(verbose = false))
+
+println("Status: ", prob_ini.status)
+println("Objective value: ", prob_ini.optval)
+#println("x = %x", x)
+pow_sol = pow;
+
+P_k0_ini = pow_sol.value;
+sum_pow = 0;
+for i = 1:NumUser
+    sum_pow = sum_pow + abs( h_rzf[:,i]'*inv(h_rzf*h_rzf' + eye(Km)*eta_ini)^2*h_rzf[:,i] )*P_k0_ini[i];
+end
+t_ini = lamba*sum_pow + Pow_cir;
+
+pow_check = minimum(P_k0_ini);
+####################################################################
+Rate_ini_ue = zeros(1, NumUser);
+for i = 1:NumUser
+    x_rate = abs( h_rzf[:,i]'*inv(h_rzf*h_rzf' + eye(Km)*eta_ini)*h_rzf[:,i] )^2*P_k0_ini[i];
+    term_rate = 0;
+    for j = 1:NumUser
+        if(j != i)
+            term_rate = term_rate + abs( h_rzf[:,i]'*inv(h_rzf*h_rzf' + eye(Km)*eta_ini)*h_rzf[:,j] )^2*P_k0_ini[j];
+        end
+    end
+    term_rate = term_rate + var_noise[i];
+    Rate_ini_ue[i] = log2(1 + x_rate/term_rate);
+end
+
+
+
+
+
+# ############################################################
+# ########## EE_RZF_max algorithm ############################
+
+iter = 0; epsilon = 1;
+# while (epsilon >= 1e-3)
+    iter = iter + 1;
+    phi_n_ref = zeros(1, NumUser); z_m_ref = (zeros(1, Km));
+    if (iter == 1)
+       alp_ref = eta_ini;
+       phi_n_ref = 1./P_k0_ini;
+       t_ref = t_ini;
+       for m = 1:Km
+           z_m_ref[m] = 1/(abs(H2[m]) + alp_ref);
+       end
+    else
+       alp_ref = alp_sol;
+       t_ref = t_sol;
+       phi_n_ref = phi_n_sol;
+       z_m_ref = z_m_sol;
+    end
+
+    term_y = zeros(1, NumUser);
+    a_2 = zeros(1, NumUser); b_2 = zeros(1, NumUser); c_2 = zeros(1, NumUser); d_2 = zeros(1, NumUser);
+    a_3 = zeros(1, NumUser); b_3 = zeros(1, NumUser); c_3 = zeros(1, NumUser); d_3 = zeros(1, NumUser); e_3 = zeros(1, NumUser);
+    for i = 1:NumUser
+        term_y[i] = (trace(real(bar_h[:,i]*bar_h[:,i]')*diagm(z_m_ref[1:Km])))^2;
+
+        term_t = 0;
+        for j = 1:NumUser
+            if(j != i)
+                term_t = term_t + abs(trace((bar_h[:,j]*bar_h[:,i]')*diagm(z_m_ref[1:Km])))^2/phi_n_ref[j];
+            end
+        end
+        term_t = term_t + var_noise[i];
+
+        a_2[i] = log(1 + 1/(phi_n_ref[i]*(1/term_y[i])*term_t)) + 3/(phi_n_ref[i]*(1/term_y[i])*term_t + 1);
+        b_2[i] = 1/(phi_n_ref[i]*(phi_n_ref[i]*(1/term_y[i])*term_t + 1));
+        c_2[i] = 1/((1/term_y[i])*(phi_n_ref[i]*(1/term_y[i])*term_t + 1));
+        d_2[i] = 1/(term_t*(phi_n_ref[i]*(1/term_y[i])*term_t + 1));
+
+        a_3[i] = 2*log(1 + 1/(phi_n_ref[i]*(1/term_y[i])*term_t))/t_ref + 3/(t_ref*(phi_n_ref[i]*(1/term_y[i])*term_t + 1));
+        b_3[i] = 1/(phi_n_ref[i]*t_ref*(phi_n_ref[i]*(1/term_y[i])*term_t + 1));
+        c_3[i] = 1/((1/term_y[i])*t_ref*(phi_n_ref[i]*(1/term_y[i])*term_t + 1));
+        d_3[i] = 1/(term_t*t_ref*(phi_n_ref[i]*(1/term_y[i])*term_t + 1));
+        e_3[i] = log(1 + 1/(phi_n_ref[i]*(1/term_y[i])*term_t))/t_ref^2;
+    end
+
+    ###################################################################
+      # optimization code
+    phi_n = Variable(NumUser, Positive())
+    z_m = Variable(Km, Positive())
+    alp = Variable(1, Positive())
+    t = Variable(1, Positive())
+
+    obj1 = 0; obj2 = 0; obj3 = 0; obj4 = 0; obj5 = 0;
+    obj1 = sum(a_3);
+    for i = 1:NumUser
+        obj2 = obj2 + b_3[i]*phi_n[i];
+        obj3 = obj3 + c_3[i]*square(invpos(trace(abs(bar_h[:,i]*bar_h[:,i]')*diagm(z_m))));
+        term_obj4_ref = 0;
+        for j = 1:NumUser
+            if(j != i)
+                term_obj4_ref = term_obj4_ref + quadoverlin( trace(abs(bar_h[:,j]*bar_h[:,i]')*diagm(z_m)), phi_n[j] );
+            end
+        end
+        obj4 = obj4 + d_3[i]*(term_obj4_ref + var_noise[i]);
+        obj5 = obj5 + e_3[i]*t;
+    end
+    OBJ = real( obj1 - obj2 - obj3 - obj4 - obj5 );
+
+    prob = maximize(OBJ)
+      ########## build up constraints #######################################
+      # first and second constraints
+      for m = 1:Km
+        # prob.constraints += z_m[m] >= invpos(abs(H2[m]) + alp);
+        prob.constraints += alp + abs(H2[m]) + z_m[m]/(z_m_ref[m]^2) <= 2/z_m_ref[m] ;
+      end
+
+      term_pow_con = 0;
+      for i = 1:NumUser
+        # third constraint
+        term_pow = 0;
+        for m = 1:Km
+          term_pow = term_pow + abs(bar_h[m,i])^2*quadoverlin(inv_pos(alp + abs(H2[m])), phi_n[i]);
+        end
+        term_pow_con = term_pow_con + term_pow;
+
+        # fourth constraint
+        term_d2_ref = 0;
+        for j = 1:NumUser
+          if (j != i)
+            term_d2_ref = term_d2_ref + quadoverlin( trace(abs(bar_h[:,j]*bar_h[:,i]')*diagm(z_m)), phi_n[j] );
+          end
+        end
+        prob.constraints += a_2[i] - b_2[i]*phi_n[i] - d_2[i]*(term_d2_ref + var_noise[i]) >= rmin
+          + c_2[i]*square(invpos(trace(real(bar_h[:,i]*bar_h[:,i]')*diagm(z_m))));
+      end
+      prob.constraints += term_pow_con <= Pm;
+      prob.constraints += t >= lamba*term_pow_con + Pow_cir;
+
+    @time solve!(prob, ECOSSolver(verbose=false))
+
+    println("Status: ", prob.status)
+    println("Objective value: ", prob.optval)
+    #println("x = %x", x)
+    phi_n_sol = phi_n;
+
+
+    ####################################################################
+# ##################################################################
+ # end

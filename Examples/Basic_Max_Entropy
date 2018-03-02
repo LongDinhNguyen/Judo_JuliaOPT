@@ -1,0 +1,22 @@
+# Here is a constrained entropy maximization problem:
+#    maximize    sum_{i=1}^n x_i log x_i
+#    subject to  1' x = 1
+#                 Ax \leq b
+# where x in R^n is our optimization variable and A in R^{m x n}, b in R^m.
+
+tic()
+using Convex, SCS
+
+n = 50;
+m = 20;
+A = randn(m, n);
+b = rand(m, 1);
+
+x = Variable(n);
+problem = maximize(entropy(x), sum(x) == 1, A * x <= b)
+solve!(problem, SCSSolver(verbose=0))
+toc()
+
+println(problem.status)
+println(problem.optval)
+# println(x.value)

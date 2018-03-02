@@ -1,0 +1,22 @@
+using Convex, GLPKMathProgInterface
+using JLD, HDF5
+
+# ###############################################
+# Function opt
+# ###############################################
+function f_milp(a,b,c,N)
+    x = Variable(N, :Int)
+
+    obj = a'*x;
+
+    problem = maximize(obj, b'*x <= c, 0 <= x, x <= 10)
+
+    #using GLPKMathProgInterface
+    @time solve!(problem, GLPKSolverMIP())
+
+    println("Status: ", problem.status)
+    println("Objective value: ", problem.optval)
+    #println("x = %x", x)
+    x_sol = x;
+    save("/Users/LONG NGUYEN/Documents/CVXPY/JULIA_OPT/Juno_JULIA/solution.jld","x_sol",x_sol)
+end

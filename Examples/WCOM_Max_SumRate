@@ -1,0 +1,35 @@
+# Long Dinh Nguyen, PhD student at Queen's University Belfast
+# Email: dinhlonghcmut@gmail.com (lnguyen04@qub.ac.uk)
+#
+#
+#
+# This convex problem is to maximize the sum rate with multiple constraints (power budget, ...)
+# Assuming all interference is eliminated by techniques (Conj, ZF, MMSE ...)
+# The general problem as
+# max log(1 + |h'*x|^2/delta)
+# s.t. ||x||_2^2 <= P_{max}
+###########################################
+
+using Convex
+
+# Set data
+n = 500; # size of MISO (multi-antenna at BS and single-antenna at UE)
+delta = 1; # normalized the Gaussian noise at receivers
+P0 = 100; # the maximum power budget
+
+h = 0.5*(randn(n,1) + im*randn(n,1)) # channel gain from BS to UE
+
+# println(h)
+
+# set variable
+x = ComplexVariable(n)
+
+obj = log(1 + real(h'*x)/delta)
+problem = maximize(obj, [square(norm(x,2)) <= P0])
+
+using ECOS
+@time solve!(problem, ECOSSolver())
+
+println("Status: ", problem.status)
+println("Objective value: ", problem.optval)
+# println("x = ", x)

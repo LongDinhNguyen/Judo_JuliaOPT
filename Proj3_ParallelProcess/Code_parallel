@@ -1,0 +1,17 @@
+using MathProgBase
+
+#julia -p 3
+n_pros = 2; # No of processor (n + 1)
+addprocs(n_pros)
+# @everywhere function cir_num(numIter)
+#  rand_co = rand(numIter, 2).^2;
+#  return(sum(rand_co[:,1] + rand_co[:,2] .< 1))
+# end
+
+tic()
+numIter = 90000000
+in_circle = @parallel (+) for i = 1:numIter
+  Int(sum(rand(2) .^2) < 1)
+end
+toc()
+print(4 * in_circle / numIter)

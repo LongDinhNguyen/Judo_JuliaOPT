@@ -1,0 +1,168 @@
+# This code is written by
+# Long Dinh Nguyen, PhD student at Queen's University Belfast
+# Email: dinhlonghcmut@gmail.com (lnguyen04@qub.ac.uk)
+#
+#
+#
+# This convex problem is to implement a basic successive sequence program (SSP) for fractional nonlinear program (FNLP)
+#
+# For instance, the general FNLP problem as Energy Efficiency problem
+# max    sum(rate(x(p)))/Power(x(p))
+# s.t. log(1 + |h'*x(p)|^2/delta) >= r_{min}
+#      ||x(p)||_2^2 <= P_{max}
+
+# rate(x(p_i)) = log(1 + a_i*p_i/(sum_{j neq i}(a_j*p_j) + delta))
+# Power(x(p)) = ||x(p)||_2^2 + P_{cir}
+###########################################
+
+using Convex
+
+# set data
+k = 5; # number of elements
+n = 40; # number of antennas at BS
+P0 = 1000; # max power budget
+P_cir = 1000;
+r0 = 0.2; # data rate QoS
+delta = 1e-4; # normalized Gaussian noise
+
+# set channel model from a BS (multi-antenna) to multiple UEs (single-antenna)
+H = 0.5*(randn(n,k) + im*randn(n,k))
+
+# Assume pathloss (large-scale) channel is fixed with the value of 1e-2
+path = 1e-3;
+
+# Applying Conjugate beamforming
+F_conj = H*inv(H'*H);
+
+# Nomalized vector beamforming
+f_nor = randn(n,k) + im*randn(n,k);
+for i=1:k
+    f_nor[:,i] = F_conj[:,i]/norm(F_conj[:,i],2);
+end
+
+beta = Array{Any,2}(zeros(k,k))
+for i = 1:k
+    beta[:,i] = [path*abs2(H[:,i]'*f_nor[:,i])/norm(f_nor[:,i])^2 for j = 1:k]
+end
+@show beta
+
+
+# ##############################################
+# ########## Initial point ############
+p_ini = Variable(k , Positive())
+term_j = Variable(0)
+
+obj_ini = sumsquares(p_ini) + P_cir
+problem = minimize(obj_ini)
+
+# problem.constraints += sumsquares(p_ini) <= P0
+for i = 1:k
+    for j = 1:k
+        if (j != i)
+            term_j = [term_j, p_ini[j]*sqrt(beta[j,i])]
+        end
+    end
+    # @show size(term_j)
+    problem.constraints += p_ini[i]*sqrt(beta[i,i]) >= sqrt(exp(1)^r0-1)*norm([ term_j[(k-1)*(i-1)+1:(k-1)*i] ,sqrt(delta)])
+# The issue has to do with the fact that a vector of variables is not equivalent to a vector-variable
+# in the current implementation of Convex.jl. Should this issue be reopened?
+end
+
+using ECOS
+@time solve!(problem, ECOSSolver())
+
+pow_ini = p_ini.value
+@show pow_ini
+t_ini = sum(pow_ini.^2) + P_cir
+@show t_ini
+
+# ##############################################
+# ########## Successive sequence algorithm ############
+
+# set tau_ini
+er_alg = 1;
+iter_alg = 0;
+ref_sol = [];
+
+while (er_alg >= 1e-3)
+
+    iter_alg = iter_alg + 1;
+    println("Iteration: ", iter_alg)
+
+    if (iter_alg == 1)
+        pow_ref = pow_ini;
+        t_ref = t_ini;
+    else
+        pow_ref = pow_iter;
+        t_ref = t_iter;
+    end
+
+    x_it = Array{Any,2}(zeros(k,1));
+    a = Array{Any,2}(zeros(k,1)); b = Array{Any,2}(zeros(k,1)); c = Array{Any,2}(zeros(k,1));
+    for i = 1:k
+        term_x = 0;
+        for j=1:k
+            if(j!=i)
+                term_x = term_x + beta[j,i]*pow_ref[j]^2
+            end
+        end
+        x_it[i] = beta[i,i]*pow_ref[i]^2/(term_x+delta)
+
+        a[i] = 2*log(1+x_it[i])/t_ref + x_it[i]/(t_ref*(1+x_it[i]))
+        b[i] = x_it[i]^2/(t_ref*(1+x_it[i]))
+        c[i] = log(1+x_it[i])/t_ref^2
+    end
+
+#println("!Done step!")
+
+pow = Variable(k, Positive())
+t = Variable(1, Positive())
+
+obj1 = sum(a)
+obj2 = sum([b[i]*delta*invpos(2*pow_ref[i]*pow[i] - pow_ref[i]^2)/beta[i,i] for i = 1:k])
+obj3 = 0
+    for i = 1:k
+    for j = 1:k
+        if(j != i)
+            obj3 = obj3 + b[i]*((2*beta[j,i]*pow_ref[j]*pow[j]/(beta[i,i]*pow_ref[i]^2)) - beta[j,i]*pow_ref[j]^2*((2*pow_ref[i]*pow[i]-pow_ref[i]^2)/(beta[i]*pow_ref[i]^4)))
+        end
+    end
+    end
+obj4 = sum([c[i]*t for i = 1:k])
+
+problem = maximize(obj1 - obj2 - obj3 - obj4)
+
+for i = 1:k
+    for j = 1:k
+        if (j != i)
+            term_j = [term_j, pow[j]*sqrt(beta[j,i])]
+        end
+    end
+    # @show size(term_j)
+    problem.constraints += pow[i]*sqrt(beta[i,i]) >= sqrt(exp(1)^r0-1)*norm([ term_j[(k-1)*(i-1)+1:(k-1)*i] ,sqrt(delta)])
+    problem.constraints += pow[i] >= pow_ref[i]/2
+# The issue has to do with the fact that a vector of variables is not equivalent to a vector-variable
+# in the current implementation of Convex.jl. Should this issue be reopened?
+end
+    problem.constraints += sumsquares(pow) <= P0
+    problem.constraints += t >= sumsquares(pow) + P_cir
+
+using SCS
+@time solve!(problem, SCSSolver())
+
+pow_iter = pow.value
+    @show pow_iter
+t_iter = t.value
+    @show t_iter
+
+ref_sol = [ref_sol; problem.optval];
+# println("ref_sol is: ", ref_sol)
+if (iter_alg >= 2)
+        er_alg = abs(ref_sol[iter_alg] - ref_sol[iter_alg-1])/abs(ref_sol[iter_alg-1]);
+end
+println("Error_Alg is: ", er_alg)
+
+if (iter_alg >= 10)
+    er_alg = 0;
+end
+end

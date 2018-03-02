@@ -1,0 +1,44 @@
+# Taken from CVX website http://cvxr.com/cvx/examples/
+# Derived from Example: Finding the fastest mixing Markov chain on a graph
+# Ported from cvx matlab to cvxpy by Misrab Faizullah-Khan
+# Original comments below
+
+# Boyd & Vandenberghe, "Convex Optimization"
+# Joelle Skaf - 08/23/05
+#
+# Solved a QCQP with 3 inequalities:
+#           minimize    1/2 x'*P0*x + q0'*r + r0
+#               s.t.    1/2 x'*Pi*x + qi'*r + ri <= 0   for i=1,2,3
+# and verifies that strong duality holds.
+
+#tic()
+using Convex
+
+n = 500;
+
+P0 = randn(n, n); P0 = P0' * P0 + eye(n);
+
+# println(P0)
+
+P1 = randn(n, n); P1 = P1'*P1; P1 = P1' * P1 + eye(n);
+P2 = randn(n, n); P2 = P2'*P2; P2 = P2' * P2 + eye(n);
+P3 = randn(n, n); P3 = P3'*P3; P3 = P3' * P3 + eye(n);
+
+q0 = randn(n,1); q1 = randn(n,1); q2 = randn(n,1); q3 = randn(n,1);
+r0 = randn(1,1); r1 = randn(1,1); r2 = randn(1,1); r3 = randn(1,1);
+
+x = Variable(n)
+
+obj = quadform(x,P0) + dot(q0,x) + sum(r0)
+const1 = quadform(x,P1) + dot(q1,x) + r1
+const2 = quadform(x,P2) + dot(q2,x) + r2
+const3 = quadform(x,P3) + dot(q3,x) + r3
+problem = minimize(obj, const1 <= 100, const2 <= 100, const3 <= 100)
+
+@time solve!(problem)
+
+#toc()
+
+println("Status: ", problem.status)
+println("Optimal value = ", problem.optval)
+#println("Value of x = ", x.value)

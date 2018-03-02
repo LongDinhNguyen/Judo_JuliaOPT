@@ -1,0 +1,26 @@
+using Convex
+using ECOS
+using SCS
+using MathProgBase
+
+x = Variable(1);
+y = Variable(1);
+z = Variable(1);
+
+prob = minimize(z)
+
+prob.constraints += sqrt(z) >= square(invpos(geomean(x, y)));
+prob.constraints += 2 <= x;
+prob.constraints += 2 <= y;
+prob.constraints += 0 <= z;
+prob.constraints += x <= 2;
+prob.constraints += y <= 2;
+prob.constraints += z <= 2;
+
+@time solve!(prob, ECOSSolver(verbose=false))
+# toc()
+
+println("Status: ", prob.status)
+println("Value of z = ", z)
+
+println(1/16)

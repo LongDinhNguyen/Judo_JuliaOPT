@@ -1,0 +1,28 @@
+# Using Convexjl
+#############################################################################
+# basic.jl
+#
+# Solves a simple Mixed-Integer LP:
+# max 5x + 3y
+#  st 3x + 1y <= 10
+#      0 <= x <= 10
+#      0 <= y <= 5
+#      x,y in integer
+#############################################################################
+
+using Convex
+
+x = Variable(1, :Int)
+y = Variable(1, :Int)
+
+obj = 5*x+3*y
+
+problem = maximize(obj, 3*x + 1*y <= 10, 0 <= x, x <= 10, 0 <= y, y <= 5)
+
+using GLPKMathProgInterface
+@time solve!(problem, GLPKSolverMIP())
+
+println("Status: ", problem.status)
+println("Objective value: ", problem.optval)
+println("x = %x", x)
+println("y = ", y)
